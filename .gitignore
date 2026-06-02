@@ -1,0 +1,13 @@
+# Build output
+/server/build/
+build/
+*.o
+*.a
+
+# Node / frontend (later milestone)
+/client/node_modules/
+/client/dist/
+
+# Editor / OS
+.DS_Store
+*.swp
