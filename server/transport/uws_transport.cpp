@@ -6,7 +6,11 @@
 // reverse proxy in deployment.
 #include <libusockets.h>
 
+#include <cstring>
+#include <fstream>
 #include <map>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 
@@ -28,6 +32,30 @@ const char* statusLine(int code) {
         case 404: return "404 Not Found";
         default:  return "500 Internal Server Error";
     }
+}
+
+const char* contentTypeFor(const std::string& path) {
+    auto ends = [&](const char* s) {
+        size_t n = std::strlen(s);
+        return path.size() >= n && path.compare(path.size() - n, n, s) == 0;
+    };
+    if (ends(".html")) return "text/html; charset=utf-8";
+    if (ends(".js") || ends(".mjs")) return "text/javascript; charset=utf-8";
+    if (ends(".css")) return "text/css; charset=utf-8";
+    if (ends(".json")) return "application/json";
+    if (ends(".svg")) return "image/svg+xml";
+    if (ends(".png")) return "image/png";
+    if (ends(".ico")) return "image/x-icon";
+    if (ends(".woff2")) return "font/woff2";
+    return "application/octet-stream";
+}
+
+std::optional<std::string> readFile(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return std::nullopt;
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
 }
 
 const char* kSmokePage = R"HTML(<!doctype html><meta charset=utf8>
@@ -58,7 +86,8 @@ function send(o){ if(ws&&ws.readyState===1){ ws.send(JSON.stringify(o)); log('> 
 
 class UwsTransport : public ITransport {
 public:
-    explicit UwsTransport(ITransportCallbacks& cb) : cb_(cb) {}
+    UwsTransport(ITransportCallbacks& cb, std::string staticDir)
+        : cb_(cb), staticDir_(std::move(staticDir)) {}
 
     void run(uint16_t port) override {
         loop_ = uWS::Loop::get();
@@ -84,13 +113,11 @@ public:
         };
 
         app_ = std::make_unique<uWS::App>();
-        app_->get("/", [](auto* res, auto*) {
-                 res->writeHeader("Content-Type", "text/html")->end(kSmokePage);
-             })
-            .get("/health", [](auto* res, auto*) { res->end("ok"); })
+        app_->get("/health", [](auto* res, auto*) { res->end("ok"); })
             .options("/*", [cors](auto* res, auto*) { cors(res); res->end(); })
             .post("/create", httpPost)
             .post("/join", httpPost)
+            .get("/*", [this](auto* res, auto* req) { serveGet(res, std::string(req->getUrl())); })
             .template ws<PerSocketData>("/ws", makeBehavior())
             .listen(port, [port](auto* token) {
                 if (token) printf("[mg] listening on ws://localhost:%u  (smoke: http://localhost:%u/)\n", port, port);
@@ -134,6 +161,25 @@ public:
     }
 
 private:
+    template <class Res>
+    void serveGet(Res* res, std::string url) {
+        if (staticDir_.empty()) {  // dev: serve the built-in smoke page
+            res->writeHeader("Content-Type", "text/html")->end(kSmokePage);
+            return;
+        }
+        if (url.find("..") != std::string::npos) url = "/";  // no path traversal
+        if (url == "/") url = "/index.html";
+        if (auto body = readFile(staticDir_ + url)) {
+            res->writeHeader("Content-Type", contentTypeFor(url))->end(*body);
+            return;
+        }
+        // SPA fallback: unknown path → index.html
+        if (auto idx = readFile(staticDir_ + "/index.html"))
+            res->writeHeader("Content-Type", "text/html; charset=utf-8")->end(*idx);
+        else
+            res->writeStatus("404 Not Found")->end("not found");
+    }
+
     struct TimerCtx { UwsTransport* self; RoomKey room; uint32_t id; };
 
     static void onTimerFired(struct us_timer_t* t) {
@@ -166,6 +212,7 @@ private:
     }
 
     ITransportCallbacks& cb_;
+    std::string staticDir_;
     std::unique_ptr<uWS::App> app_;
     uWS::Loop* loop_ = nullptr;
     ConnId nextConn_ = 1;
@@ -176,8 +223,9 @@ private:
 }  // namespace
 
 // Factory the rest of the program uses; keeps uWS types out of headers.
-std::unique_ptr<ITransport> makeUwsTransport(ITransportCallbacks& cb) {
-    return std::make_unique<UwsTransport>(cb);
+// staticDir empty ⇒ serve the built-in smoke page; otherwise serve files from it.
+std::unique_ptr<ITransport> makeUwsTransport(ITransportCallbacks& cb, std::string staticDir) {
+    return std::make_unique<UwsTransport>(cb, std::move(staticDir));
 }
 
 }  // namespace mg::tx

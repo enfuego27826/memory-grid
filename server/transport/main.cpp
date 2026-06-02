@@ -11,15 +11,19 @@
 #include "transport/rooms.hpp"
 #include "transport/sessions.hpp"
 
+#include <string>
+
 namespace mg::tx {
-std::unique_ptr<ITransport> makeUwsTransport(ITransportCallbacks&);  // uws_transport.cpp
+std::unique_ptr<ITransport> makeUwsTransport(ITransportCallbacks&, std::string staticDir);
 }
 
 int main(int argc, char** argv) {
     using namespace mg;
     using namespace mg::tx;
 
+    // Usage: mg_server [port] [staticDir]
     const uint16_t port = (argc > 1) ? static_cast<uint16_t>(std::atoi(argv[1])) : 9001;
+    const std::string staticDir = (argc > 2) ? argv[2] : "";
 
     std::random_device rd;
     RoomFactory factory = [seedSrc = std::mt19937{rd()}](const GameSettings& s) mutable {
@@ -36,7 +40,7 @@ int main(int argc, char** argv) {
     };
 
     Dispatcher dispatch(registry, sessions, clock);
-    auto transport = makeUwsTransport(dispatch);
+    auto transport = makeUwsTransport(dispatch, staticDir);
     dispatch.setTransport(transport.get());
     transport->run(port);
     return 0;

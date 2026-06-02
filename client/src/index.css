@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  background: #0b1020;
+  color: #e7ecff;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+/* Anti-cheat: nothing on the canvas surface is selectable, and only the ready
+   button receives pointer events while a pattern is shown. */
+.canvas-layer, .canvas-layer * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.no-pointer { pointer-events: none; }
+.ready-button { pointer-events: auto; }
