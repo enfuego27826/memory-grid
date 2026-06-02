@@ -14,7 +14,7 @@ if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
   set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 endif()
 
-project(memory_grid_server LANGUAGES CXX)
+project(memory_grid_server LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -55,3 +55,77 @@ add_executable(mg_tests
 )
 target_link_libraries(mg_tests PRIVATE mg_core doctest::doctest)
 add_test(NAME mg_tests COMMAND mg_tests)
+
+# ---- Transport dependency: nlohmann/json (header-only, fetched) -----------
+FetchContent_Declare(
+  json
+  GIT_REPOSITORY https://github.com/nlohmann/json.git
+  GIT_TAG v3.11.3
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(json)
+
+# ---- Transport logic library (NO uWebSockets dependency) ------------------
+# wire/rooms/dispatch talk only to ITransport, so they build + test without any
+# WebSocket library. uWS lives solely in uws_transport.cpp (added with mg_server).
+add_library(mg_transport
+  transport/wire.cpp
+  transport/rooms.cpp
+  transport/dispatch.cpp
+)
+target_link_libraries(mg_transport PUBLIC mg_core nlohmann_json::nlohmann_json)
+target_include_directories(mg_transport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# ---- Transport tests (doctest, FakeRoom + FakeTransport, no real sockets) -
+add_executable(mg_transport_tests
+  tests/test_main.cpp
+  tests/test_transport_wire.cpp
+  tests/test_transport_dispatch.cpp
+)
+target_link_libraries(mg_transport_tests PRIVATE mg_transport doctest::doctest)
+add_test(NAME mg_transport_tests COMMAND mg_transport_tests)
+
+# ---- uWebSockets + uSockets (ws:// only) ----------------------------------
+# Building the server is opt-in so the (slow, single-core) uWS template build and
+# its network fetch don't run for core/transport-logic test cycles.
+option(MG_BUILD_SERVER "Build the uWebSockets server executable" ON)
+if(MG_BUILD_SERVER)
+  # uWS pulls uSockets as a git submodule; FetchContent does NOT recurse by
+  # default, hence GIT_SUBMODULES_RECURSE. uWS has no usable CMake, so we only
+  # populate and author the uSockets target ourselves.
+  FetchContent_Declare(
+    uwebsockets
+    GIT_REPOSITORY https://github.com/uNetworking/uWebSockets.git
+    GIT_TAG v20.62.0
+    GIT_SUBMODULES_RECURSE TRUE
+    GIT_SHALLOW TRUE
+  )
+  FetchContent_MakeAvailable(uwebsockets)
+
+  set(USOCKETS_DIR ${uwebsockets_SOURCE_DIR}/uSockets)
+  if(NOT EXISTS ${USOCKETS_DIR}/src/libusockets.h)
+    message(FATAL_ERROR "uSockets sources missing at ${USOCKETS_DIR}/src — submodule not fetched")
+  endif()
+
+  # Compile uSockets directly (NOT its Makefile). Exclude crypto/* for ws://-only.
+  file(GLOB USOCKETS_SRC ${USOCKETS_DIR}/src/*.c ${USOCKETS_DIR}/src/eventing/*.c)
+  add_library(usockets STATIC ${USOCKETS_SRC})
+  target_include_directories(usockets PUBLIC ${USOCKETS_DIR}/src)
+  target_compile_definitions(usockets PUBLIC LIBUS_NO_SSL)
+  target_compile_options(usockets PRIVATE -w)  # third-party C: silence warnings
+  find_package(ZLIB REQUIRED)
+  target_link_libraries(usockets PUBLIC ZLIB::ZLIB)
+
+  add_library(uwebsockets_hdr INTERFACE)
+  target_include_directories(uwebsockets_hdr INTERFACE ${uwebsockets_SOURCE_DIR}/src)
+  target_link_libraries(uwebsockets_hdr INTERFACE usockets)
+
+  add_executable(mg_server
+    transport/uws_transport.cpp
+    transport/main.cpp
+  )
+  # uWS headers are warning-heavy; this is the only TU paying the template cost.
+  target_compile_options(mg_server PRIVATE -Wno-unused-parameter)
+  target_link_libraries(mg_server PRIVATE mg_transport uwebsockets_hdr)
+  target_include_directories(mg_server PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+endif()

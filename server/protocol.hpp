@@ -46,10 +46,13 @@ struct PlayerLeft    {};                           // disconnect / leave (the `f
 struct SkipRound     {};                          // host
 struct EndGameEarly  {};                          // host
 struct PauseToggle   {};                          // host, between rounds
+struct KickPlayer    { PlayerId target; };        // host (lobby control, spec §11)
+struct TransferHost  { PlayerId target; };        // host (lobby control, spec §11)
 
 using Command = std::variant<JoinRoom, ConfigureRoom, StartGame, PressReady,
                              ClickTile, SendChat, TabSwitched, PlayerLeft,
-                             SkipRound, EndGameEarly, PauseToggle>;
+                             SkipRound, EndGameEarly, PauseToggle, KickPlayer,
+                             TransferHost>;
 
 // ===========================================================================
 // Shared value types carried by events.
@@ -75,6 +78,15 @@ struct ScoreLine {
     PlayerId id = kNoPlayer;
     int roundScore = 0;
     int total = 0;
+    // Screen-5 breakdown. Walker fields (base/speed/volunteer/deductions) are set
+    // for the walker line; helper fields (hintsFollowed/hintsIgnored) for helpers.
+    // Unused fields stay 0.
+    int base = 0;
+    int speed = 0;
+    int volunteer = 0;
+    int deductions = 0;
+    int hintsFollowed = 0;
+    int hintsIgnored = 0;
     bool operator==(const ScoreLine&) const = default;
 };
 
@@ -98,6 +110,9 @@ struct PatternReveal   { std::vector<TileIndex> path; FlashMode flashMode;
                          bool operator==(const PatternReveal&) const = default; };
 
 struct WalkerAssigned  { PlayerId id; bool wasRandom;
+                         // Endpoints so Screen 4 can mark start + finish. These are
+                         // the path's two ends only (already-visible info) — NOT the path.
+                         uint8_t startRow, startCol, finishRow, finishCol;
                          bool operator==(const WalkerAssigned&) const = default; };
 struct TileResult      { bool correct; uint8_t lives;
                          bool operator==(const TileResult&) const = default; };

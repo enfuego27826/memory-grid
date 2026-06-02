@@ -69,6 +69,7 @@ private:
     // ---- command handlers (dispatched by phase) ----
     void onJoin(PlayerId from, const JoinRoom& c, StepResult& r);
     void onLeave(PlayerId from, uint64_t atMs, StepResult& r);
+    void removePlayer(PlayerId target, uint64_t atMs, StepResult& r);  // leave/kick shared body
     void onConfigure(PlayerId from, const ConfigureRoom& c, StepResult& r);
     void onStart(PlayerId from, uint64_t atMs, StepResult& r);
     void onPressReady(PlayerId from, uint64_t atMs, StepResult& r);
@@ -78,6 +79,8 @@ private:
     void onSkipRound(PlayerId from, uint64_t atMs, StepResult& r);
     void onEndEarly(PlayerId from, StepResult& r);
     void onPauseToggle(PlayerId from, StepResult& r);
+    void onKick(PlayerId from, const KickPlayer& c, uint64_t atMs, StepResult& r);
+    void onTransferHost(PlayerId from, const TransferHost& c, StepResult& r);
 
     // ---- phase transitions ----
     void enterPattern(uint64_t atMs, bool reusePath, StepResult& r);

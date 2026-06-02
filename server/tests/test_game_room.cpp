@@ -191,6 +191,74 @@ TEST_CASE("start requires >=2 players and host privileges") {
     CHECK(firstEvent<PatternReveal>(r3) != nullptr);
 }
 
+TEST_CASE("host can transfer host to a chosen player") {
+    GameRoom room(1, easyPreset());
+    room.apply(1, JoinRoom{"A"}, 0);
+    room.apply(2, JoinRoom{"B"}, 0);
+    StepResult r = room.apply(1, TransferHost{2}, 0);
+    const RoomUpdate* ru = firstEvent<RoomUpdate>(r);
+    REQUIRE(ru != nullptr);
+    for (const auto& p : ru->players) {
+        if (p.id == 1) CHECK(p.isHost == false);
+        if (p.id == 2) CHECK(p.isHost == true);
+    }
+    // A non-host attempting transfer is ignored.
+    StepResult r2 = room.apply(1, TransferHost{1}, 0);  // player 1 is no longer host
+    CHECK(firstEvent<RoomUpdate>(r2) == nullptr);
+}
+
+TEST_CASE("host can kick a player") {
+    GameRoom room(1, easyPreset());
+    room.apply(1, JoinRoom{"A"}, 0);
+    room.apply(2, JoinRoom{"B"}, 0);
+    room.apply(3, JoinRoom{"C"}, 0);
+    StepResult r = room.apply(1, KickPlayer{3}, 0);
+    const RoomUpdate* ru = firstEvent<RoomUpdate>(r);
+    REQUIRE(ru != nullptr);
+    bool stillThere = false;
+    for (const auto& p : ru->players) if (p.id == 3) stillThere = true;
+    CHECK(stillThere == false);
+    // Cannot kick the host (self).
+    StepResult r2 = room.apply(1, KickPlayer{1}, 0);
+    CHECK(firstEvent<SystemNotice>(r2) == nullptr);
+}
+
+TEST_CASE("walker_assigned carries start and finish endpoints") {
+    Started g(easyPreset());
+    StepResult r = g.room.apply(2, PressReady{}, 0);
+    const WalkerAssigned* wa = firstEvent<WalkerAssigned>(r);
+    REQUIRE(wa != nullptr);
+    int cols = g.cols;
+    CHECK(tileAt(wa->startRow, wa->startCol, cols) == g.path.front());
+    CHECK(tileAt(wa->finishRow, wa->finishCol, cols) == g.path.back());
+}
+
+TEST_CASE("score breakdown fields are populated for walker and helper") {
+    Started g(easyPreset());
+    g.room.apply(2, PressReady{}, 0);
+    // Helper (player 1) gives a correct hint that the walker follows.
+    TileIndex next = g.path[1];
+    int hr = rowOf(next, g.cols) + 1, hc = colOf(next, g.cols) + 1;
+    g.room.apply(1, SendChat{"row " + std::to_string(hr) + " col " + std::to_string(hc)}, 0);
+    StepResult last;
+    for (size_t i = 1; i < g.path.size(); ++i)
+        last = g.room.apply(2, clickFor(g.path[i], g.cols), 0);  // instant → full speed bonus
+    const ScoreUpdate* su = firstEvent<ScoreUpdate>(last);
+    REQUIRE(su != nullptr);
+    for (const auto& line : su->scores) {
+        if (line.id == 2) {  // walker
+            CHECK(line.base == 500);
+            CHECK(line.speed == 300);
+            CHECK(line.volunteer == 50);
+            CHECK(line.deductions == 0);
+        }
+        if (line.id == 1) {  // helper followed exactly one hint
+            CHECK(line.hintsFollowed == 1);
+            CHECK(line.hintsIgnored == 0);
+        }
+    }
+}
+
 TEST_CASE("host leaving transfers host to the earliest remaining player") {
     GameRoom room(1, easyPreset());
     room.apply(1, JoinRoom{"A"}, 0);

@@ -34,6 +34,8 @@ StepResult GameRoom::apply(PlayerId from, const Command& cmd, uint64_t atMs) {
         else if constexpr (std::is_same_v<T, SkipRound>)   onSkipRound(from, atMs, r);
         else if constexpr (std::is_same_v<T, EndGameEarly>) onEndEarly(from, r);
         else if constexpr (std::is_same_v<T, PauseToggle>)  onPauseToggle(from, r);
+        else if constexpr (std::is_same_v<T, KickPlayer>)   onKick(from, c, atMs, r);
+        else if constexpr (std::is_same_v<T, TransferHost>) onTransferHost(from, c, r);
     }, cmd);
     return r;
 }
@@ -94,6 +96,10 @@ void GameRoom::onJoin(PlayerId from, const JoinRoom& c, StepResult& r) {
 }
 
 void GameRoom::onLeave(PlayerId from, uint64_t atMs, StepResult& r) {
+    removePlayer(from, atMs, r);
+}
+
+void GameRoom::removePlayer(PlayerId from, uint64_t atMs, StepResult& r) {
     Player* p = find(from);
     if (!p) return;
 
@@ -328,6 +334,23 @@ void GameRoom::onPauseToggle(PlayerId from, StepResult& r) {
     }
 }
 
+void GameRoom::onKick(PlayerId from, const KickPlayer& c, uint64_t atMs, StepResult& r) {
+    if (!isHostCmd(from, hostId_)) return;
+    if (c.target == hostId_ || !find(c.target)) return;  // can't kick self/host or a ghost
+    r.out.push_back({Reach::Broadcast, kNoPlayer, SystemNotice{"A player was removed by the host."}});
+    removePlayer(c.target, atMs, r);  // shares walker-replay / host-reassign logic with leave
+}
+
+void GameRoom::onTransferHost(PlayerId from, const TransferHost& c, StepResult& r) {
+    if (!isHostCmd(from, hostId_)) return;
+    Player* target = find(c.target);
+    if (!target || c.target == hostId_) return;
+    if (Player* cur = find(hostId_)) cur->host = false;
+    target->host = true;
+    hostId_ = c.target;
+    pushRoomUpdate(r);
+}
+
 // ---------------------------------------------------------------------------
 // Phase transitions
 // ---------------------------------------------------------------------------
@@ -390,13 +413,20 @@ void GameRoom::enterWalk(uint64_t atMs, StepResult& r) {
     hints_.clear();
     roundHelperPoints_.clear();
 
+    const int cols = settings_.grid.cols;
     const TileIndex start = path_.start();
+    const TileIndex finish = path_.finish();
     pushRoomUpdate(r);
     r.out.push_back({Reach::Broadcast, kNoPlayer, PhaseStart{Phase::Walk}});
-    r.out.push_back({Reach::Broadcast, kNoPlayer, WalkerAssigned{walkerId_, wasRandom_}});
     r.out.push_back({Reach::Broadcast, kNoPlayer,
-                     WalkerPosition{static_cast<uint8_t>(rowOf(start, settings_.grid.cols)),
-                                    static_cast<uint8_t>(colOf(start, settings_.grid.cols))}});
+                     WalkerAssigned{walkerId_, wasRandom_,
+                                    static_cast<uint8_t>(rowOf(start, cols)),
+                                    static_cast<uint8_t>(colOf(start, cols)),
+                                    static_cast<uint8_t>(rowOf(finish, cols)),
+                                    static_cast<uint8_t>(colOf(finish, cols))}});
+    r.out.push_back({Reach::Broadcast, kNoPlayer,
+                     WalkerPosition{static_cast<uint8_t>(rowOf(start, cols)),
+                                    static_cast<uint8_t>(colOf(start, cols))}});
 }
 
 void GameRoom::enterScore(WalkOutcome outcome, uint64_t atMs, StepResult& r) {
@@ -442,17 +472,39 @@ void GameRoom::enterScore(WalkOutcome outcome, uint64_t atMs, StepResult& r) {
     for (const auto& [hid, pts] : roundHelperPoints_)
         if (Player* hp = find(hid)) hp->scoreTotal += pts;
 
-    // Build the score lines.
+    // Per-helper followed / ignored-correct counts for the Screen-5 breakdown.
+    auto countFor = [&](PlayerId h) {
+        int followed = 0, ignored = 0;
+        for (const auto& hint : hints_) {
+            if (hint.helper != h) continue;
+            if (hint.followed) { ++followed; continue; }
+            for (TileIndex t : hint.candidates)
+                if (path_.contains(t)) { ++ignored; break; }  // a correct hint, not followed
+        }
+        return std::pair{followed, ignored};
+    };
+
+    // Build the score lines (with breakdown fields).
     ScoreUpdate su;
     for (const auto& p : players_) {
-        int roundScore = 0;
-        if (p.id == walkerId_) roundScore = ws.total;
-        else {
+        ScoreLine line;
+        line.id = p.id;
+        line.total = p.scoreTotal;
+        if (p.id == walkerId_) {
+            line.roundScore = ws.total;
+            line.base = ws.base;
+            line.speed = ws.speed;
+            line.volunteer = ws.volunteer;
+            line.deductions = ws.deductions;
+        } else {
             auto it = std::find_if(roundHelperPoints_.begin(), roundHelperPoints_.end(),
                                    [&](auto& kv) { return kv.first == p.id; });
-            if (it != roundHelperPoints_.end()) roundScore = it->second;
+            if (it != roundHelperPoints_.end()) line.roundScore = it->second;
+            auto [followed, ignored] = countFor(p.id);
+            line.hintsFollowed = followed;
+            line.hintsIgnored = ignored;
         }
-        su.scores.push_back({p.id, roundScore, p.scoreTotal});
+        su.scores.push_back(line);
     }
 
     pushRoomUpdate(r);
