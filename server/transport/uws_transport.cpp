@@ -21,6 +21,7 @@ namespace mg::tx {
 namespace {
 
 constexpr bool SSL = false;
+constexpr std::size_t kHttpBodyCap = 64 * 1024;  // bound POST body accumulation
 struct PerSocketData { ConnId id = kNoConn; };
 using WS = uWS::WebSocket<SSL, true, PerSocketData>;
 
@@ -106,7 +107,7 @@ public:
             auto buf = std::make_shared<std::string>();
             std::string path(req->getUrl());
             res->onData([this, res, buf, path, writeResp](std::string_view chunk, bool last) {
-                buf->append(chunk);
+                if (buf->size() < kHttpBodyCap) buf->append(chunk);  // bound memory (anti-bloat)
                 if (last) writeResp(res, cb_.onHttp({"POST", path, *buf}));
             });
             res->onAborted([] {});

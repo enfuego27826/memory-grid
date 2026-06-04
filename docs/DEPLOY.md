@@ -29,6 +29,20 @@ no mixed-content (`http://` + `ws://`, same host/port).
 
 Builds `mg_server` (Release) and the Vite client, then restarts the service.
 
+## Memory (1.8 GB box — important)
+
+- **Build with `-j1`.** A bare `cmake --build -j` uses *unlimited* parallel jobs;
+  the uWebSockets template TU (`uws_transport.cpp`) needs ~1 GB on its own, so
+  parallel compiles OOM-kill the box (exit 137). `deploy.sh` pins `-j1`. The
+  lightweight targets (`mg_tests`, `mg_transport_tests`, `mg_core`, `mg_transport`)
+  don't pull uWS and build cheaply.
+- **Runtime footprint is small** — the server is in-memory only; stopping it frees
+  ~10 MB. The memory pressure is the *build*, not the running process.
+- **Leak/bloat audit:** core + transport are valgrind-clean. Fixed: session tokens
+  are now revoked on player-leave and room-teardown (`byToken_` previously grew
+  unbounded — `revoke()` was never called); HTTP POST bodies are capped at 64 KB
+  (only WS frames were capped before). Timer ctx alloc is paired (new/delete).
+
 ## Notes
 
 - The client uses **same-origin relative URLs** (`/create`, `/join`, `/ws`), so it

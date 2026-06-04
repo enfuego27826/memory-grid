@@ -216,7 +216,10 @@ void Dispatcher::onTimer(const RoomKey& roomKey, uint32_t timerId) {
     if (!room) return;
 
     if (timerId == TEARDOWN_TIMER_ID) {
-        if (room->connectedCount == 0) registry_.destroy(roomKey);
+        if (room->connectedCount == 0) {
+            for (auto& [pid, slot] : room->players) sessions_.revoke(slot.sessionToken);
+            registry_.destroy(roomKey);
+        }
         return;
     }
     if (timerId >= GRACE_TIMER_BASE) {
@@ -234,7 +237,9 @@ void Dispatcher::onTimer(const RoomKey& roomKey, uint32_t timerId) {
 
 void Dispatcher::firePlayerLeft(RoomCtx& room, PlayerId player) {
     StepResult res = room.game->apply(player, PlayerLeft{}, now_());
-    // Drop the transport-side slot before delivering (so routing skips it).
+    // Drop the transport-side slot + its session token before delivering
+    // (otherwise byToken_ would grow unbounded — tokens were never revoked).
+    if (PlayerSlot* slot = room.find(player)) sessions_.revoke(slot->sessionToken);
     room.players.erase(player);
     room.spectators.erase(player);
     room.rates.forget(player);

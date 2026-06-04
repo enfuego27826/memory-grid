@@ -6,8 +6,10 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 export PATH="$HOME/.local/bin:$PATH"   # pip-installed cmake
 
 echo "[deploy] building server (mg_server)…"
+# IMPORTANT: -j1 (single job). The uWebSockets template TU needs ~1GB to compile;
+# a bare `-j` spawns unlimited parallel compiles and OOM-kills on this 1.8GB box.
 cmake -S "$ROOT/server" -B "$ROOT/server/build" -DCMAKE_BUILD_TYPE=Release >/dev/null
-cmake --build "$ROOT/server/build" -j --target mg_server
+cmake --build "$ROOT/server/build" -j1 --target mg_server
 
 # Port 80 needs cap_net_bind_service; a rebuild replaces the binary and drops it,
 # so re-apply (prompts for sudo password once).

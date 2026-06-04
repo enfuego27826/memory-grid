@@ -211,6 +211,8 @@ TEST_CASE("disconnect grace fires PlayerLeft; last-out schedules teardown") {
     auto code = h.create();
     h.dispatch.onMessage(1, Harness::joinMsg(code, "A"));
     h.dispatch.onMessage(2, Harness::joinMsg(code, "B"));
+    std::string t1 = h.tokenSentTo(1), t2 = h.tokenSentTo(2);
+    REQUIRE(!t1.empty()); REQUIRE(!t2.empty());
 
     h.dispatch.onClose(1);  // non-last → grace
     h.dispatch.onTimer(code, GRACE_TIMER_BASE + 1);
@@ -218,9 +220,11 @@ TEST_CASE("disconnect grace fires PlayerLeft; last-out schedules teardown") {
     for (auto& a : h.room->applies)
         if (std::holds_alternative<PlayerLeft>(std::get<1>(a))) ++leftApplies;
     CHECK(leftApplies == 1);
+    CHECK(!h.sessions.resolve(t1).has_value());  // token revoked when the player left
 
     h.dispatch.onClose(2);  // now last connected leaves
     CHECK(h.transport.hasScheduled(code, TEARDOWN_TIMER_ID));
     h.dispatch.onTimer(code, TEARDOWN_TIMER_ID);
-    CHECK(h.registry.lookup(code) == nullptr);  // room destroyed
+    CHECK(h.registry.lookup(code) == nullptr);   // room destroyed
+    CHECK(!h.sessions.resolve(t2).has_value());  // remaining tokens revoked on teardown
 }
