@@ -206,6 +206,30 @@ TEST_CASE("reconnect rebinds without the core seeing PlayerLeft") {
     CHECK(leftApplies == 0);
 }
 
+TEST_CASE("reconnect token evicts an already-live socket for the same player") {
+    Harness h;
+    auto code = h.create();
+    h.dispatch.onMessage(1, Harness::joinMsg(code, "A"));  // id 1
+    h.dispatch.onMessage(2, Harness::joinMsg(code, "B"));  // id 2
+    std::string token = h.tokenSentTo(1);
+    REQUIRE(!token.empty());
+
+    h.transport.clear();
+    auto rec = json{{"type", "join_room"}, {"code", code}, {"token", token}}.dump();
+    h.dispatch.onMessage(3, rec);
+
+    CHECK(h.transport.subs.count({1, code}) == 0);
+    CHECK(h.transport.subs.count({3, code}) == 1);
+    REQUIRE(h.transport.closed.size() == 1);
+    CHECK(h.transport.closed[0] == 1);
+
+    h.dispatch.onClose(1);  // stale close from the evicted socket must be harmless
+    int leftApplies = 0;
+    for (auto& a : h.room->applies)
+        if (std::holds_alternative<PlayerLeft>(std::get<1>(a))) ++leftApplies;
+    CHECK(leftApplies == 0);
+}
+
 TEST_CASE("disconnect grace fires PlayerLeft; last-out schedules teardown") {
     Harness h;
     auto code = h.create();

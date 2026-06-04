@@ -105,6 +105,11 @@ void Dispatcher::rebind(ConnId connId, const SessionStore::Session& s) {
     PlayerSlot* slot = room->find(s.player);
     if (!slot) { transport_->sendOne(connId, wire::serializeNotice("Seat gone.")); return; }
 
+    if (slot->connected && slot->conn != kNoConn && slot->conn != connId) {
+        transport_->unsubscribe(slot->conn, s.room);
+        sessions_.unbind(slot->conn);
+        transport_->closeOne(slot->conn);
+    }
     slot->conn = connId;
     if (!slot->connected) { slot->connected = true; ++room->connectedCount; }
     slot->graceDeadlineMs = 0;

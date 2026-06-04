@@ -1,5 +1,7 @@
 #include "transport/wire.hpp"
 
+#include <algorithm>
+
 #include <nlohmann/json.hpp>
 
 #include "core/path_gen.hpp"  // rowOf/colOf for PatternReveal expansion
@@ -62,6 +64,28 @@ T getOr(const json& j, const char* key, T fallback) {
     return fallback;
 }
 
+GameSettings validateAndNormalizeSettings(GameSettings s) {
+    s.grid.rows = std::clamp(s.grid.rows, 4, 12);
+    s.grid.cols = std::clamp(s.grid.cols, 4, 12);
+    const int maxPath = std::max(3, s.grid.tiles() - 4);
+    if (s.pathLength >= 0) s.pathLength = std::clamp(s.pathLength, 3, maxPath);
+
+    s.memoriseTimeSec = std::clamp(s.memoriseTimeSec, 5, 120);
+    s.livesPerWalker = std::clamp(s.livesPerWalker, 1, 10);
+    s.wrongStepDeduction = std::clamp(s.wrongStepDeduction, 0, 100000);
+    s.eliminationsPerRound = std::clamp(s.eliminationsPerRound, 0, limits::kMaxPlayers - 1);
+    s.minPlayersToEnd = std::clamp(s.minPlayersToEnd, 1, limits::kMaxPlayers);
+    s.basePoints = std::clamp(s.basePoints, 0, 100000);
+    s.maxSpeedBonus = std::clamp(s.maxSpeedBonus, 0, 100000);
+    s.maxVolunteerBonus = std::clamp(s.maxVolunteerBonus, 0, 100000);
+    s.hintPointsEarly = std::clamp(s.hintPointsEarly, 0, 100000);
+    s.hintPointsMid = std::clamp(s.hintPointsMid, 0, 100000);
+    s.hintPointsLate = std::clamp(s.hintPointsLate, 0, 100000);
+    s.numRounds = std::clamp(s.numRounds, 1, 50);
+    s.chatRateLimitMs = std::clamp(s.chatRateLimitMs, 250, 10000);
+    return s;
+}
+
 GameSettings parseSettingsJson(const json& j) {
     GameSettings s = presetFor(difficultyOf(getOr<std::string>(j, "difficulty", "medium")));
     if (auto g = j.find("gridSize"); g != j.end() && g->is_object()) {
@@ -120,7 +144,7 @@ GameSettings parseSettingsJson(const json& j) {
                          : e == "both" ? EscalationStep::Both : EscalationStep::GridPlusOne;
     }
     s.chatRateLimitMs = getOr<int>(j, "chatRateLimit", s.chatRateLimitMs);
-    return s;
+    return validateAndNormalizeSettings(s);
 }
 
 json settingsToJson(const GameSettings& s) {

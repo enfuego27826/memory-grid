@@ -87,3 +87,39 @@ TEST_CASE("settings round-trip through parse/serialize") {
     CHECK(out.eliminationMode == in.eliminationMode);
     CHECK(out.chatRateLimitMs == in.chatRateLimitMs);
 }
+
+TEST_CASE("settings parsing normalizes unsafe numeric values") {
+    GameSettings out = tx::wire::parseSettings(R"({
+        "gridSize":{"rows":0,"cols":99},
+        "pathLength":9999,
+        "memoriseTime":-10,
+        "livesPerWalker":0,
+        "wrongStepDeduction":-5,
+        "eliminationsPerRound":99,
+        "minPlayers":99,
+        "basePoints":-1,
+        "maxSpeedBonus":-1,
+        "maxVolunteerBonus":-1,
+        "hintPointsEarly":-1,
+        "hintPointsMid":-1,
+        "hintPointsLate":-1,
+        "numRounds":0,
+        "chatRateLimit":0
+    })");
+    CHECK(out.grid.rows == 4);
+    CHECK(out.grid.cols == 12);
+    CHECK(out.pathLength == out.grid.tiles() - 4);
+    CHECK(out.memoriseTimeSec == 5);
+    CHECK(out.livesPerWalker == 1);
+    CHECK(out.wrongStepDeduction == 0);
+    CHECK(out.eliminationsPerRound == limits::kMaxPlayers - 1);
+    CHECK(out.minPlayersToEnd == limits::kMaxPlayers);
+    CHECK(out.basePoints == 0);
+    CHECK(out.maxSpeedBonus == 0);
+    CHECK(out.maxVolunteerBonus == 0);
+    CHECK(out.hintPointsEarly == 0);
+    CHECK(out.hintPointsMid == 0);
+    CHECK(out.hintPointsLate == 0);
+    CHECK(out.numRounds == 1);
+    CHECK(out.chatRateLimitMs == 250);
+}
