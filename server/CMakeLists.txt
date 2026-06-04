@@ -125,7 +125,10 @@ if(MG_BUILD_SERVER)
     transport/main.cpp
   )
   # uWS headers are warning-heavy; this is the only TU paying the template cost.
-  target_compile_options(mg_server PRIVATE -Wno-unused-parameter)
+  # -O0 + aggressive GC params keep the uWS template compile's peak RAM low enough
+  # to build on this 1.8GB box without swap (runtime perf is irrelevant — ~3MB RSS).
+  target_compile_options(mg_server PRIVATE -Wno-unused-parameter -O0
+    "SHELL:--param ggc-min-expand=10" "SHELL:--param ggc-min-heapsize=32768")
   target_link_libraries(mg_server PRIVATE mg_transport uwebsockets_hdr)
   target_include_directories(mg_server PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
