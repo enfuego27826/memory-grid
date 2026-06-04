@@ -238,7 +238,14 @@ export const useGameStore = create<State & Actions>((set, get) => ({
 }));
 
 // ---- derived selectors ----
+// Law of Demeter: components ask these selectors rather than reaching through
+// `store.players.find(...)?.field` or `store.settings.gridSize.cols` themselves.
 export const myPlayer = (s: State) => s.players.find((p) => p.id === s.myId) ?? null;
 export const amHost = (s: State) => myPlayer(s)?.isHost ?? false;
 export const amWalker = (s: State) => s.myId != null && s.myId === s.walkerId;
 export const playerName = (s: State, id: number) => s.players.find((p) => p.id === id)?.name ?? `#${id}`;
+const walker = (s: State) => s.players.find((p) => p.id === s.walkerId) ?? null;
+export const gridDims = (s: State) => ({ rows: s.settings?.gridSize.rows ?? 6, cols: s.settings?.gridSize.cols ?? 6 });
+export const walkerColour = (s: State) => walker(s)?.colour ?? '#60a5fa';
+export const walkerLives = (s: State) =>
+  s.myId != null && s.myId === s.walkerId ? s.myLives ?? 0 : walker(s)?.lives ?? 0;

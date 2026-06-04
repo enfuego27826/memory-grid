@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { computeGeom, hitTest, type Geom } from './geometry';
 import { drawGrid, drawPath, drawWalk, drawMarkers } from './gridRender';
 import { drawNoise } from './noiseOverlay';
-import { useGameStore } from '../store/useGameStore';
+import { useGameStore, gridDims, walkerColour } from '../store/useGameStore';
 
 interface Props {
   interactive?: boolean;                          // walk phase: clicks enabled
@@ -36,8 +36,7 @@ export default function GridCanvas({ interactive, onTile }: Props) {
 
     const frame = (t: number) => {
       const s = useGameStore.getState();
-      const cols = s.settings?.gridSize.cols ?? 6;
-      const rows = s.settings?.gridSize.rows ?? 6;
+      const { rows, cols } = gridDims(s);
       const w = wrap.clientWidth, h = wrap.clientHeight;
       const g = computeGeom(w, h, rows, cols);
       geomRef.current = g;
@@ -49,8 +48,7 @@ export default function GridCanvas({ interactive, onTile }: Props) {
       if (showPattern) drawPath(ctx, g, s.patternPath!, s.flashMode, t);
 
       if (s.phase === 'walk') {
-        const walker = s.players.find((p) => p.id === s.walkerId);
-        drawWalk(ctx, g, s.walkedTiles, s.walkerPos, walker?.colour ?? '#60a5fa');
+        drawWalk(ctx, g, s.walkedTiles, s.walkerPos, walkerColour(s));
       }
       drawMarkers(ctx, g, s.startTile, s.finishTile);
 

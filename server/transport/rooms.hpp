@@ -58,6 +58,15 @@ struct RoomCtx {
         auto it = players.find(id);
         return it == players.end() ? nullptr : &it->second;
     }
+
+    // Law of Demeter: callers ask the room directly instead of reaching through
+    // its internal player map / nested settings (e.g. room.find(id)->name or
+    // room.settings.grid.cols).
+    std::string_view nameOf(mg::PlayerId id) const {
+        auto it = players.find(id);
+        return it == players.end() ? std::string_view{} : std::string_view{it->second.name};
+    }
+    int cols() const { return settings.grid.cols; }
 };
 
 class RoomRegistry {

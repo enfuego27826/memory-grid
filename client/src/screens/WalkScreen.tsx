@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useGameStore, amWalker, playerName } from '../store/useGameStore';
+import { useGameStore, amWalker, playerName, walkerLives } from '../store/useGameStore';
 import { send } from '../net/WebSocketService';
 import GridCanvas from '../canvas/GridCanvas';
 import Chat from '../components/Chat';
@@ -9,17 +9,14 @@ import { useVisibilityGuard } from '../hooks/guards';
 
 export default function WalkScreen() {
   useVisibilityGuard();
-  const walker = useGameStore((s) => s.walkerId);
   const iWalk = useGameStore(amWalker);
-  const myLives = useGameStore((s) => s.myLives);
-  const players = useGameStore((s) => s.players);
   const settings = useGameStore((s) => s.settings);
   const startedAt = useGameStore((s) => s.walkStartedAt);
   const walkerName = useGameStore((s) => (s.walkerId != null ? playerName(s, s.walkerId) : '—'));
+  const lives = useGameStore(walkerLives);
   const elapsed = useStopwatch(startedAt);
   const [showLb, setShowLb] = useState(true);
 
-  const walkerLives = iWalk ? myLives : players.find((p) => p.id === walker)?.lives ?? 0;
   const onTile = (row: number, col: number) => { if (iWalk) send({ type: 'click_tile', row, col }); };
 
   return (
@@ -27,7 +24,7 @@ export default function WalkScreen() {
       <div className="flex items-center gap-4 px-4 py-2 bg-slate-900/70 text-sm">
         <span className="font-semibold text-emerald-400">{walkerName}</span>
         <span className="text-slate-400">walking</span>
-        <span>❤ {walkerLives}</span>
+        <span>❤ {lives}</span>
         <span className="tabular-nums">⏱ {elapsed.toFixed(1)}s</span>
         <button className="ml-auto text-slate-400 md:hidden" onClick={() => setShowLb(!showLb)}>
           {showLb ? 'Hide' : 'Board'}

@@ -130,13 +130,10 @@ void Dispatcher::applyAndFlush(RoomCtx& room, PlayerId from, const Command& cmd)
 }
 
 void Dispatcher::deliver(RoomCtx& room, const std::vector<Event>& events) {
-    auto nameOf = [&room](PlayerId id) -> std::string_view {
-        if (PlayerSlot* s = room.find(id)) return s->name;
-        return {};
-    };
+    auto nameOf = [&room](PlayerId id) { return room.nameOf(id); };  // ask the room (LoD)
     for (const Event& e : events) {
         if (const auto* ru = std::get_if<RoomUpdate>(&e.body)) refreshMirror(room, *ru);
-        std::string msg = wire::serializeEvent(e.body, nameOf, room.settings.grid.cols);
+        std::string msg = wire::serializeEvent(e.body, nameOf, room.cols());
         switch (e.reach) {
             case Reach::Broadcast:
                 transport_->publish(room.code, msg);
@@ -171,11 +168,8 @@ void Dispatcher::refreshMirror(RoomCtx& room, const RoomUpdate& ru) {
         if (pv.isHost) room.hostId = pv.id;
     }
     // Cache for reconnect resync (build the same wire bytes).
-    auto nameOf = [&room](PlayerId id) -> std::string_view {
-        if (PlayerSlot* s = room.find(id)) return s->name;
-        return {};
-    };
-    room.lastRoomUpdateJson = wire::serializeEvent(ru, nameOf, room.settings.grid.cols);
+    auto nameOf = [&room](PlayerId id) { return room.nameOf(id); };
+    room.lastRoomUpdateJson = wire::serializeEvent(ru, nameOf, room.cols());
 }
 
 void Dispatcher::applyTimers(RoomCtx& room, const std::vector<TimerOp>& timers) {

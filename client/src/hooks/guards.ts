@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGameStore, amWalker } from '../store/useGameStore';
 import { send } from '../net/WebSocketService';
 
@@ -13,6 +13,30 @@ export function useVisibilityGuard() {
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
   }, []);
+}
+
+// Anti-screenshot: while `active` (the memorise phase), report `true` whenever the
+// window loses focus or the tab is hidden, so the UI can black the screen out
+// completely. Screenshot/snipping tools that steal focus therefore capture black.
+export function useFocusBlackout(active: boolean): boolean {
+  const [blacked, setBlacked] = useState(false);
+  useEffect(() => {
+    if (!active) { setBlacked(false); return; }
+    const onBlur = () => setBlacked(true);
+    const onFocus = () => setBlacked(false);
+    const onVis = () => setBlacked(document.hidden);
+    window.addEventListener('blur', onBlur);
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVis);
+    // initialise to the current state
+    setBlacked(document.hidden || !document.hasFocus());
+    return () => {
+      window.removeEventListener('blur', onBlur);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [active]);
+  return blacked;
 }
 
 // Dev-tools heuristic during the memorise phase: a viewport shrink >100px is the

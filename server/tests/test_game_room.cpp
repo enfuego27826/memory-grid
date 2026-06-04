@@ -259,6 +259,25 @@ TEST_CASE("score breakdown fields are populated for walker and helper") {
     }
 }
 
+TEST_CASE("play again restarts a finished game and resets scores") {
+    GameSettings s = easyPreset();
+    s.numRounds = 1;                       // ends after one round
+    Started g(s);                          // host=1; player 2 will walk
+    g.room.apply(2, PressReady{}, 0);
+    for (size_t i = 1; i < g.path.size(); ++i)
+        g.room.apply(2, clickFor(g.path[i], g.cols), 0);   // success → Score
+    g.room.onTimer(TIMER_SCORE, 1000);     // 5s dwell elapses → game ends
+    REQUIRE(g.room.phase() == Phase::Ended);
+
+    // Play Again from the host (start_game while Ended) must restart, not be ignored.
+    StepResult r = g.room.apply(1, StartGame{}, 2000);
+    CHECK(g.room.phase() == Phase::Pattern);
+    REQUIRE(firstEvent<PatternReveal>(r) != nullptr);
+    const RoomUpdate* ru = firstEvent<RoomUpdate>(r);
+    REQUIRE(ru != nullptr);
+    for (const auto& p : ru->players) CHECK(p.score == 0);   // scores reset
+}
+
 TEST_CASE("host leaving transfers host to the earliest remaining player") {
     GameRoom room(1, easyPreset());
     room.apply(1, JoinRoom{"A"}, 0);

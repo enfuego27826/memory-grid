@@ -33,13 +33,28 @@ function fillTile(ctx: CanvasRenderingContext2D, g: Geom, row: number, col: numb
   ctx.restore();
 }
 
+// Anti-screenshot reveal: a moving "comet" traces the path start→finish on a
+// loop, lighting only a short trailing window at any instant. The full path is
+// therefore NEVER present in a single frame, so a screenshot captures only a few
+// tiles; the human learns the route by watching it trace. (This is the real
+// defence — a focus/blur blackout can't beat an OS capture, which grabs the
+// frame before any JS event fires.) `mode` modulates the trace speed.
 export function drawPath(
   ctx: CanvasRenderingContext2D, g: Geom, path: [number, number][], mode: FlashMode, t: number,
 ) {
-  let alpha = 0.92;
-  if (mode === 'flashing') alpha = Math.sin(t / 250) > 0 ? 0.92 : 0.18;
-  else if (mode === 'fading') alpha = 0.35 + 0.55 * (0.5 + 0.5 * Math.sin(t / 900));
-  for (const [row, col] of path) fillTile(ctx, g, row, col, '#38e0a6', alpha);
+  const n = path.length;
+  if (n === 0) return;
+  const msPerTile = mode === 'fading' ? 420 : mode === 'flashing' ? 240 : 320;
+  const trail = Math.max(3, Math.round(n * 0.18));   // lit window (minority of path)
+  const gap = trail + 2;                              // dark pause before re-tracing
+  const head = (t / msPerTile) % (n + gap);          // floating head position
+  for (let i = 0; i < n; i++) {
+    const d = head - i;                               // distance behind the head
+    if (d < 0 || d >= trail) continue;
+    const alpha = Math.max(0.1, 0.95 * (1 - d / trail));
+    const [row, col] = path[i];
+    fillTile(ctx, g, row, col, '#38e0a6', alpha);
+  }
 }
 
 export function drawWalk(

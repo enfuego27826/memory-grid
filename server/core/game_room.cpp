@@ -141,8 +141,25 @@ void GameRoom::onConfigure(PlayerId from, const ConfigureRoom& c, StepResult& r)
 }
 
 void GameRoom::onStart(PlayerId from, uint64_t atMs, StepResult& r) {
-    if (!isHostCmd(from, hostId_) || phase_ != Phase::Lobby) return;
-    if (activeCount() < limits::kMinPlayers) return;  // ≥2 players to start
+    // Allowed from the lobby OR after a game ended ("Play Again", same lobby).
+    if (!isHostCmd(from, hostId_)) return;
+    if (phase_ != Phase::Lobby && phase_ != Phase::Ended) return;
+    if (static_cast<int>(players_.size()) < limits::kMinPlayers) return;  // ≥2 players
+
+    // Fresh game: clear all per-game player state. Eliminated players and mid-game
+    // joiners (spectators) all become active players for the new game (spec §16).
+    for (auto& p : players_) {
+        p.scoreTotal = 0;
+        p.eliminated = false;
+        p.spectator = false;
+        p.successfulWalks = 0;
+        p.hintsFollowed = 0;
+        p.canVolunteer = true;
+        p.readyPressed = false;
+        p.lives = settings_.livesPerWalker;
+    }
+    paused_ = false;
+    awaitingResume_ = false;
     currentRound_ = 0;  // enterPattern increments to 1
     enterPattern(atMs, /*reusePath=*/false, r);
 }

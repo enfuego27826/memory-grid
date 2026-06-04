@@ -2,7 +2,7 @@ import { useGameStore, myPlayer } from '../store/useGameStore';
 import { send } from '../net/WebSocketService';
 import GridCanvas from '../canvas/GridCanvas';
 import { useCountdown } from '../hooks/useCountdown';
-import { useDevtoolsGuard } from '../hooks/guards';
+import { useDevtoolsGuard, useFocusBlackout } from '../hooks/guards';
 
 export default function PatternScreen() {
   const players = useGameStore((s) => s.players);
@@ -11,6 +11,7 @@ export default function PatternScreen() {
   const hidden = useGameStore((s) => s.patternHidden);
   const remaining = useCountdown(deadline);
   useDevtoolsGuard(true);
+  const blacked = useFocusBlackout(true);  // black out when the window isn't focused
 
   const stillDeciding = players.filter((p) => !p.isSpectator && !p.isEliminated && !p.isReady).length;
   const canVolunteer = me && !me.isSpectator && !me.isEliminated;
@@ -39,6 +40,14 @@ export default function PatternScreen() {
         I’m Ready — Walk It!
       </button>
       {!canVolunteer && <div className="text-slate-500 text-sm mt-2">Spectating this round.</div>}
+
+      {/* Anti-screenshot: cover everything in opaque black when the window loses
+          focus / the tab is hidden during the memorise phase. */}
+      {blacked && (
+        <div className="fixed inset-0 bg-black z-[100] flex items-center justify-center">
+          <span className="text-slate-600 text-sm">Pattern hidden — focus the window</span>
+        </div>
+      )}
     </div>
   );
 }
